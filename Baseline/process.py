@@ -62,15 +62,12 @@ class Baseline(SegmentationAlgorithm):
         if not output_path.exists():
             output_path.mkdir()
 
-        #self._input_path = Path("/input/images/brain-mri/")
         self._segmentation_output_path = Path("/output/images/white-matter-multiple-sclerosis-lesion-segmentation/")
         self._uncertainty_output_path = Path("/output/images/white-matter-multiple-sclerosis-lesion-uncertainty-map/")
 
-        #self._segmentation_output_path = Path("/output/segmentation/")
-        #self._uncertainty_output_path = Path("/output/uncertainty/")
-
         self.device = get_default_device()
 
+        # TODO: modify for your submission
         K = 3
         models = []
         for i in range(K):
@@ -82,19 +79,19 @@ class Baseline(SegmentationAlgorithm):
                 strides=(2, 2, 2, 2),
                 num_res_units=0).to(self.device)
             )
+        self.th = 0.35
+        self.roi_size = (96, 96, 96)
+        self.sw_batch_size = 4
+        #-------------------------------------
 
         for i, model in enumerate(models):
             model.load_state_dict(torch.load('./model'+str(i+1)+'.pth', map_location=self.device))
             model.eval()
-
         self.models = models
         self.act = torch.nn.Softmax(dim=1)
-        self.th = 0.35
-        self.roi_size = (96, 96, 96)
-        self.sw_batch_size = 4
-
 
     def process_case(self, *, idx, case):
+        """ Please don't modify this code """
         # Load and test the image for this case
         input_image, input_image_file_path = self._load_input_image(case=case)
 
@@ -129,10 +126,8 @@ class Baseline(SegmentationAlgorithm):
 
 
     def predict(self, *, input_image: SimpleITK.Image) -> SimpleITK.Image:
-
         image = SimpleITK.GetArrayFromImage(input_image)
         image = np.transpose(np.array(image))
-
 
         # The image must be normalized as that is what we did with monai for training of the model
         # only normalize non-zero values (i.e. not the background)
@@ -140,9 +135,10 @@ class Baseline(SegmentationAlgorithm):
         mu = np.mean(image[non_zeros])
         sigma = np.std(image[non_zeros])
         image[non_zeros] = (image[non_zeros] - mu) / sigma
+        
+        # TODO: add other pre-processing to the images if needed
 
         with torch.no_grad():
-
             image = torch.unsqueeze(torch.unsqueeze(torch.from_numpy(image).to(self.device), axis=0), axis=0)
 
             all_outputs = []
@@ -159,7 +155,7 @@ class Baseline(SegmentationAlgorithm):
         seg = np.squeeze(seg)
         seg = remove_connected_components(seg)
 
-        uncs = ensemble_uncertainties_classification( np.concatenate( (np.expand_dims(all_outputs, axis=-1), np.expand_dims(1.-all_outputs, axis=-1)), axis=-1) )
+        uncs = ensemble_uncertainties_classification( np.concatenate( (np.expand_dims(all_outputs, axis=-1), np.expand_dims(1.-all_outputs, axis=-1)), axis=-1))
         unc_rmi = uncs["reverse_mutual_information"]
 
         out_seg = SimpleITK.GetImageFromArray(seg)
